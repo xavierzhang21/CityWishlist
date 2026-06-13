@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Wish Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Global glass & soft palette base */
+        :root {
+            --tiffany: #81d8d0;
+            --mint-light: #b8ebe6;
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.8);
+            --shadow-soft: 0 8px 30px rgba(129, 216, 208, 0.18);
+        }
+
+        body {
+            background: linear-gradient(135deg, #f0fcfb 0%, #e6f8f6 100%);
+            min-height: 100vh;
+        }
+
+        /* Glassmorphism card base */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-soft);
+            border-radius: 20px;
+            transition: all 0.18s ease;
+        }
+
+        /* Strong click interaction for city cards */
+        .city-card {
+            padding: 2.5rem 1rem;
+            cursor: pointer;
+        }
+        .city-card:active {
+            transform: scale(0.94);
+            box-shadow: 0 2px 12px rgba(129, 216, 208, 0.25);
+            filter: brightness(0.96);
+        }
+        .city-card:hover {
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Tab styling glass modern */
+        .tab-btn {
+            backdrop-filter: blur(12px);
+            border-radius: 14px;
+            padding: 0.6rem 1.2rem;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .tab-btn.active {
+            background: rgba(129, 216, 208, 0.28);
+            border-color: var(--tiffany);
+            color: #0f4c48;
+        }
+
+        /* Toast animation */
+        #toast {
+            backdrop-filter: blur(14px);
+            background: rgba(15, 76, 72, 0.85);
+            border-radius: 12px;
+            transition: opacity 0.25s ease;
+        }
+
+        /* Export & Import Buttons */
+        .action-btn {
+            padding: 0.6rem 1rem;
+            border-radius: 14px;
+            border: 1px solid var(--tiffany);
+            background: rgba(129, 216, 208, 0.15);
+            color: #0f4c48;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background: rgba(129, 216, 208, 0.3);
+        }
+        .hidden-input {
+            position: absolute;
+            width: 0;
+            height: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="text-slate-800 font-sans">
+    <div class="max-w-3xl mx-auto px-5 py-10">
+        <!-- Tab Navigation -->
+        <div class="flex gap-3 mb-10 justify-center">
+            <button id="tabHome" class="tab-btn active">Select City</button>
+            <button id="tabHistory" class="tab-btn">History Log</button>
+            <button id="tabSummary" class="tab-btn">Monthly Summary</button>
+        </div>
+
+        <!-- Home: City Selection Cards -->
+        <section id="pageHome" class="block">
+            <h2 class="text-[22px] font-medium mb-8 text-center text-teal-900">Where do I want to go?</h2>
+            <div class="grid grid-cols-2 gap-5">
+                <div class="city-card glass-card text-center" data-city="Singapore">
+                    <p class="text-lg font-semibold text-teal-900">Singapore</p>
+                </div>
+                <div class="city-card glass-card text-center" data-city="New York">
+                    <p class="text-lg font-semibold text-teal-900">New York</p>
+                </div>
+                <div class="city-card glass-card text-center" data-city="London">
+                    <p class="text-lg font-semibold text-teal-900">London</p>
+                </div>
+                <div class="city-card glass-card text-center" data-city="Toronto">
+                    <p class="text-lg font-semibold text-teal-900">Toronto</p>
+                </div>
+            </div>
+            <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 text-white px-6 py-3 opacity-0"></div>
+        </section>
+
+        <!-- History Log Page (Add Export/Import Area) -->
+        <section id="pageHistory" class="hidden">
+            <h2 class="text-[22px] font-medium mb-4 text-teal-900">All Wish History</h2>
+            <div class="flex gap-3 mb-6 flex-wrap">
+                <button id="exportCsvBtn" class="action-btn">Download Excel (CSV)</button>
+                <button id="importCsvBtn" class="action-btn">Import CSV File</button>
+                <input type="file" id="csvFileInput" accept=".csv" class="hidden-input">
+            </div>
+            <div id="historyList" class="space-y-4"></div>
+            <p id="emptyHistory" class="text-teal-600 mt-16 text-center opacity-60 hidden">No selections yet.</p>
+        </section>
+
+        <!-- Monthly Summary Page -->
+        <section id="pageSummary" class="hidden">
+            <h2 class="text-[22px] font-medium mb-6 text-teal-900">Monthly Summary</h2>
+            <select id="monthSelector" class="w-full p-3 rounded-xl glass-card mb-7 outline-none border-0">
+            </select>
+            <div id="summaryBlock" class="glass-card p-6">
+                <p class="text-lg font-medium mb-4 text-teal-900">Total Entries: <span id="totalMonth">0</span></p>
+                <div class="grid grid-cols-2 gap-4 mb-6" id="cityStats"></div>
+                <canvas id="pieChart" height="240"></canvas>
+            </div>
+            <p id="emptySummary" class="text-teal-600 mt-16 text-center opacity-60 hidden">No records available.</p>
+        </section>
+    </div>
+
+    <!-- Firebase SDK (compat v9 — works in plain HTML, no bundler needed) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        // ================================================================
+        //  STEP 1 — PASTE YOUR FIREBASE CONFIG HERE
+        //  How to get it:
+        //  1. Go to https://console.firebase.google.com → create a project
+        //  2. Project Settings → "Your apps" → Web app (</>)
+        //  3. Copy the firebaseConfig object and replace the one below
+        //  4. In Firestore → Rules, set:
+        //       allow read, write: if true;   ← for personal/low-traffic use
+        // ================================================================
+        const firebaseConfig = {
+            apiKey:            "AIzaSyAzwDJXxVprr1eqbk50AIC7xJ4wzlNquP4",
+            authDomain:        "citywishlist.firebaseapp.com",
+            projectId:         "citywishlist",
+            storageBucket:     "citywishlist.firebasestorage.app",
+            messagingSenderId: "614857649281",
+            appId:             "1:614857649281:web:22241dd24d1f1867113180"
+        };
+        // ================================================================
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const COLLECTION = "wishes";
+
+        const CITIES = ["Singapore", "New York", "London", "Toronto"];
+        let entries = [];       // in-memory mirror of Firestore, newest-first
+        let chartInstance = null;
+        let currentTab = "home";
+
+        // ── STATUS INDICATOR ─────────────────────────────────────────────
+        // Small dot in the top-right corner: green = live, grey = connecting
+        const statusDot = document.createElement("div");
+        statusDot.style.cssText = `
+            position:fixed; top:14px; right:18px; width:9px; height:9px;
+            border-radius:50%; background:#ccc;
+            box-shadow:0 0 0 2px #fff; z-index:9999;
+            transition: background 0.4s;
+        `;
+        statusDot.title = "Connecting to database…";
+        document.body.appendChild(statusDot);
+
+        function setStatus(live) {
+            statusDot.style.background = live ? "#38a89d" : "#ccc";
+            statusDot.title = live ? "Live — connected to database" : "Connecting…";
+        }
+
+        // ── REAL-TIME LISTENER ────────────────────────────────────────────
+        // Firestore pushes every update to all open browser tabs instantly.
+        db.collection(COLLECTION)
+            .orderBy("timestamp", "desc")
+            .onSnapshot(snapshot => {
+                entries = snapshot.docs.map(doc => ({
+                    id:        doc.id,
+                    city:      doc.data().city,
+                    timestamp: doc.data().timestamp   // stored as ISO string
+                }));
+                setStatus(true);
+                // Re-render whichever tab is currently visible
+                if (currentTab === "history") renderHistory();
+                if (currentTab === "summary") renderMonthSelector();
+            }, err => {
+                console.error("Firestore error:", err);
+                setStatus(false);
+                showToast("⚠️ Database connection error");
+            });
+
+        // ── TAB SWITCHING ─────────────────────────────────────────────────
+        const tabs = {
+            home:    document.getElementById("tabHome"),
+            history: document.getElementById("tabHistory"),
+            summary: document.getElementById("tabSummary")
+        };
+        const pages = {
+            home:    document.getElementById("pageHome"),
+            history: document.getElementById("pageHistory"),
+            summary: document.getElementById("pageSummary")
+        };
+
+        function switchTab(target) {
+            currentTab = target;
+            Object.values(tabs).forEach(t => t.classList.remove("active"));
+            Object.values(pages).forEach(p => p.classList.add("hidden"));
+            tabs[target].classList.add("active");
+            pages[target].classList.remove("hidden");
+            if (target === "history") renderHistory();
+            if (target === "summary") renderMonthSelector();
+        }
+        tabs.home.onclick    = () => switchTab("home");
+        tabs.history.onclick = () => switchTab("history");
+        tabs.summary.onclick = () => switchTab("summary");
+
+        // ── CITY CARD TAP → WRITE TO FIRESTORE ───────────────────────────
+        document.querySelectorAll(".city-card").forEach(card => {
+            card.onclick = async () => {
+                const city = card.dataset.city;
+                const timestamp = new Date().toISOString();
+                try {
+                    await db.collection(COLLECTION).add({ city, timestamp });
+                    showToast(`Saved wish for ${city}!`);
+                } catch (err) {
+                    console.error("Write error:", err);
+                    showToast("⚠️ Could not save — check connection");
+                }
+                // entries array is auto-updated by onSnapshot above
+            };
+        });
+
+        // ── TOAST ─────────────────────────────────────────────────────────
+        function showToast(text) {
+            const toast = document.getElementById("toast");
+            toast.textContent = text;
+            toast.classList.remove("opacity-0");
+            setTimeout(() => toast.classList.add("opacity-0"), 1800);
+        }
+
+        // ── HISTORY TAB ───────────────────────────────────────────────────
+        function renderHistory() {
+            const listEl  = document.getElementById("historyList");
+            const emptyEl = document.getElementById("emptyHistory");
+            listEl.innerHTML = "";
+            if (entries.length === 0) {
+                emptyEl.classList.remove("hidden");
+                return;
+            }
+            emptyEl.classList.add("hidden");
+            entries.forEach(item => {
+                const formattedTime = new Date(item.timestamp).toLocaleString();
+                const row = document.createElement("div");
+                row.className = "glass-card p-5";
+                row.innerHTML = `
+                    <p class="font-semibold text-teal-900">${item.city}</p>
+                    <p class="text-sm text-teal-700 opacity-70 mt-1">${formattedTime}</p>
+                `;
+                listEl.appendChild(row);
+            });
+        }
+
+        // ── MONTHLY SUMMARY TAB ───────────────────────────────────────────
+        function renderMonthSelector() {
+            const select = document.getElementById("monthSelector");
+            select.innerHTML = "";
+            const monthSet = new Set();
+            entries.forEach(e => {
+                const d  = new Date(e.timestamp);
+                const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+                monthSet.add(ym);
+            });
+            const months = Array.from(monthSet).sort().reverse();
+            months.forEach(m => {
+                const opt = document.createElement("option");
+                opt.value = m; opt.textContent = m;
+                select.appendChild(opt);
+            });
+            if (months.length === 0) {
+                document.getElementById("emptySummary").classList.remove("hidden");
+                document.getElementById("summaryBlock").classList.add("hidden");
+                return;
+            }
+            document.getElementById("emptySummary").classList.add("hidden");
+            document.getElementById("summaryBlock").classList.remove("hidden");
+            select.onchange = () => renderSummary(select.value);
+            renderSummary(months[0]);
+        }
+
+        function renderSummary(targetYM) {
+            const [year, month] = targetYM.split("-").map(Number);
+            const monthEntries  = entries.filter(e => {
+                const d = new Date(e.timestamp);
+                return d.getFullYear() === year && d.getMonth() === month - 1;
+            });
+            const total  = monthEntries.length;
+            const counts = Object.fromEntries(CITIES.map(c => [c, 0]));
+            monthEntries.forEach(e => counts[e.city]++);
+
+            document.getElementById("totalMonth").textContent = total;
+            const statsContainer = document.getElementById("cityStats");
+            statsContainer.innerHTML = "";
+            CITIES.forEach(city => {
+                const cnt = counts[city];
+                const pct = total === 0 ? 0 : ((cnt / total) * 100).toFixed(1);
+                statsContainer.innerHTML += `
+                    <div class="glass-card p-4">
+                        <p class="font-medium text-teal-900">${city}</p>
+                        <p class="text-sm text-teal-700 mt-1">${cnt} entries (${pct}%)</p>
+                    </div>`;
+            });
+
+            if (chartInstance) chartInstance.destroy();
+            const ctx = document.getElementById("pieChart").getContext("2d");
+            chartInstance = new Chart(ctx, {
+                type: "pie",
+                data: {
+                    labels: CITIES,
+                    datasets: [{ data: CITIES.map(c => counts[c]),
+                        backgroundColor: ["#81d8d0","#68c3bb","#4fb8ae","#38a89d"] }]
+                },
+                options: { responsive:true,
+                    plugins:{ legend:{ position:"bottom", labels:{ color:"#0f4c48" } } } }
+            });
+        }
+
+        // ── EXPORT CSV ────────────────────────────────────────────────────
+        document.getElementById("exportCsvBtn").onclick = function() {
+            const header = ["City","Timestamp(ISO)","LocalTime"];
+            const rows   = entries.map(item => {
+                const localTime = new Date(item.timestamp).toLocaleString();
+                return `"${item.city}","${item.timestamp}","${localTime}"`;
+            });
+            const csvText = [header.join(","), ...rows].join("\n");
+            const blob    = new Blob([csvText], { type:"text/csv;charset=utf-8" });
+            const url     = URL.createObjectURL(blob);
+            const a       = document.createElement("a");
+            a.href = url; a.download = `CityWish_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("CSV file downloaded (open with Excel)");
+        };
+
+        // ── IMPORT CSV → BATCH WRITE TO FIRESTORE ────────────────────────
+        const fileInput = document.getElementById("csvFileInput");
+        document.getElementById("importCsvBtn").onclick = () => fileInput.click();
+        fileInput.onchange = async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                const lines = evt.target.result
+                    .split("\n").filter(l => l.trim() !== "");
+                const batch = db.batch();
+                let count = 0;
+                for (let i = 1; i < lines.length; i++) {
+                    const cells     = lines[i].split(",");
+                    const city      = cells[0]?.replaceAll('"','').trim();
+                    const timestamp = cells[1]?.replaceAll('"','').trim();
+                    if (CITIES.includes(city) && timestamp) {
+                        const ref = db.collection(COLLECTION).doc();
+                        batch.set(ref, { city, timestamp });
+                        count++;
+                    }
+                }
+                try {
+                    await batch.commit();
+                    showToast(`Import complete — ${count} records added`);
+                } catch (err) {
+                    showToast("⚠️ Import failed — check console");
+                    console.error(err);
+                }
+                fileInput.value = "";
+            };
+            reader.readAsText(file);
+        };
+    </script>
+</body>
+</html>
